@@ -102,17 +102,22 @@ function App() {
     Object.values(groups).forEach((group) => group.sort((a, b) => Number(a.stationNo) - Number(b.stationNo)))
     return groups
   }, [stations])
+  const mapWidth = Math.max(1000, Math.max(0, ...Object.values(stationGroups).map((group) => group.length)) * 55 + 120)
+  const mapHeight = Math.max(600, Object.keys(stationGroups).length * 55 + 80)
   const automaticPoints = useMemo(() => {
     const lines = Object.entries(stationGroups)
     const defaults = {}
     lines.forEach(([, group], lineIndex) => group.forEach((station, stationIndex) => {
       if (!defaults[station.stationNo]) defaults[station.stationNo] = {
-        x: 8 + ((stationIndex + 1) / (group.length + 1)) * 84,
-        y: 12 + ((lineIndex + 1) / (lines.length + 1)) * 76,
+        x: 60 + ((stationIndex + 1) / (group.length + 1)) * (mapWidth - 120),
+        y: 40 + ((lineIndex + 1) / (lines.length + 1)) * (mapHeight - 80),
       }
     }))
-    return Object.fromEntries(stations.map((station) => [station.stationNo, mapPoints[station.stationNo] || defaults[station.stationNo] || { x: 50, y: 50 }]))
-  }, [stations, stationGroups, mapPoints])
+    return Object.fromEntries(stations.map((station) => {
+      const saved = mapPoints[station.stationNo]
+      return [station.stationNo, saved ? { x: saved.x * mapWidth / 100, y: saved.y * mapHeight / 100 } : defaults[station.stationNo] || { x: mapWidth / 2, y: mapHeight / 2 }]
+    }))
+  }, [stations, stationGroups, mapPoints, mapWidth, mapHeight])
   const getLineColor = (line) => lineColors[line] || routeColor(line)
   const activeFilters = [filters.name && ['역명', filters.name, 'name'], filters.line && ['노선', filters.line, 'line'], filters.location && ['위치', filters.location, 'location'], favoritesOnly && ['즐겨찾기', '만', 'favorite'], missingOnly && ['위치 누락', '만', 'missing']].filter(Boolean)
 
@@ -240,16 +245,16 @@ function App() {
           <div className="results-heading"><div><div className="section-kicker">STATION LIST</div><h2>{favoritesOnly ? '즐겨찾기 역' : missingOnly ? '위치 확인이 필요한 역' : view === 'map' ? '노선도 보기' : '전체 역'} <span className="count-pill">{filtered.length}</span></h2></div><div className="view-switch"><Button size="sm" variant={view === 'cards' ? 'primary' : 'light'} onClick={() => setView('cards')}>카드</Button><Button size="sm" variant={view === 'list' ? 'primary' : 'light'} onClick={() => setView('list')}>목록</Button><Button size="sm" variant={view === 'map' ? 'primary' : 'light'} onClick={() => setView('map')}>노선도</Button></div></div>
           {view === 'map' && !loading && <section className="map-panel">
             <div className="map-toolbar"><div><strong>역 위치 노선도</strong><span>노선별 역번호순 자동 배치 · 마커를 드래그해 조정하거나 클릭해 상세를 보세요.</span></div><Badge bg="light" text="secondary">수동 조정 전 {stations.filter((station) => !mapPoints[station.stationNo]).length}</Badge></div>
-            <div className={`schematic-map ${placementTarget !== null ? 'is-placing' : ''}`}>
-              <svg viewBox="0 0 1000 600" preserveAspectRatio="none" className="map-svg" aria-label="역 위치를 표시하는 개략 노선도" onClick={handleMapClick} onPointerMove={updateDraggedPoint} onPointerUp={() => setDragStation(null)} onPointerCancel={() => setDragStation(null)}>
+            <div className={`schematic-map ${placementTarget !== null ? 'is-placing' : ''}`} style={{ height: `${mapHeight * 0.55}px` }}>
+              <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} preserveAspectRatio="none" className="map-svg" style={{ width: `${Math.max(600, mapWidth * 0.6)}px`, height: `${Math.max(360, mapHeight * 0.55)}px` }} aria-label="역 위치를 표시하는 개략 노선도" onClick={handleMapClick} onPointerMove={updateDraggedPoint} onPointerUp={() => setDragStation(null)} onPointerCancel={() => setDragStation(null)}>
                 <defs><pattern id="map-grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e9edf2" strokeWidth="1" /></pattern></defs>
-                <rect width="1000" height="600" fill="url(#map-grid)" />
-                {Object.entries(stationGroups).map(([line, group]) => <polyline key={line} points={group.map((station) => `${automaticPoints[station.stationNo].x * 10},${automaticPoints[station.stationNo].y * 6}`).join(' ')} fill="none" stroke={getLineColor(line)} strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" opacity={filters.line ? (line === filters.line ? 0.86 : 0.15) : 0.58} />)}
+                <rect width={mapWidth} height={mapHeight} fill="url(#map-grid)" />
+                {Object.entries(stationGroups).map(([line, group]) => <polyline key={line} points={group.map((station) => `${automaticPoints[station.stationNo].x},${automaticPoints[station.stationNo].y}`).join(' ')} fill="none" stroke={getLineColor(line)} strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" opacity={filters.line ? (line === filters.line ? 0.86 : 0.15) : 0.58} />)}
                 {stations.map((station) => {
                   const point = automaticPoints[station.stationNo]
                   const isVisible = filtered.some((item) => item.stationNo === station.stationNo)
                   const active = mapSelection === station.stationNo
-                  return <g key={station.stationNo} className={`map-marker ${active ? 'active' : ''} ${isVisible ? '' : 'dimmed'} ${dragStation === station.stationNo ? 'dragging' : ''}`} transform={`translate(${point.x * 10},${point.y * 6})`} role="button" tabIndex="0" aria-label={`${station.stationName}, ${station.subwayLine}, 역 번호 ${station.stationNo}. 드래그해 위치 조정`} onPointerDown={(event) => { if (placementTarget !== null) return; event.preventDefault(); event.stopPropagation(); dragMoved.current = false; setDragStation(station.stationNo); event.currentTarget.setPointerCapture(event.pointerId) }} onClick={(event) => { if (placementTarget !== null) return; event.stopPropagation(); if (dragMoved.current) { dragMoved.current = false; return } openDetail(station) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetail(station) } }}>
+                  return <g key={station.stationNo} className={`map-marker ${active ? 'active' : ''} ${isVisible ? '' : 'dimmed'} ${dragStation === station.stationNo ? 'dragging' : ''}`} transform={`translate(${point.x},${point.y})`} role="button" tabIndex="0" aria-label={`${station.stationName}, ${station.subwayLine}, 역 번호 ${station.stationNo}. 드래그해 위치 조정`} onPointerDown={(event) => { if (placementTarget !== null) return; event.preventDefault(); event.stopPropagation(); dragMoved.current = false; setDragStation(station.stationNo); event.currentTarget.setPointerCapture(event.pointerId) }} onClick={(event) => { if (placementTarget !== null) return; event.stopPropagation(); if (dragMoved.current) { dragMoved.current = false; return } openDetail(station) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetail(station) } }}>
                     {active && <circle r="28" className="marker-halo" />}<circle r="15" fill="white" stroke={getLineColor(station.subwayLine)} strokeWidth="6" /><text y="-24" textAnchor="middle">{station.stationName}</text><text y="28" textAnchor="middle" className="station-id-label">#{station.stationNo}</text>
                   </g>
                 })}
